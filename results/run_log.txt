@@ -1,23 +1,28 @@
-[1/3] lambda sweep (exact)
-  lam=0: order=[0, 1, 3, 2] overlap=12 weak=1 truth=False
-  lam=0.5: order=[0, 1, 3, 2] overlap=12 weak=1 truth=False
-  lam=1: order=[2, 3, 0, 1] overlap=11 weak=0 truth=True
-  lam=1.5: order=[2, 3, 0, 1] overlap=11 weak=0 truth=True
-  lam=2: order=[2, 3, 0, 1] overlap=11 weak=0 truth=True
-  lam=3: order=[2, 3, 0, 1] overlap=11 weak=0 truth=True
-  lam=4: order=[2, 3, 0, 1] overlap=11 weak=0 truth=True
-[2/3] classical baselines
-  baselines lam=3: greedy ok=True SA-perm=0.96 SA-QUBO=1.00
-  baselines lam=0: greedy ok=True SA-perm=1.00 SA-QUBO=0.96
-[3/3] QAOA (Qiskit Aer statevector)
-  lam=3 p=1 expectation P(opt)=0.0021 P(feas)=0.0223 E=7.30 (3s, nfev=212)
-  lam=3 p=1 cvar        P(opt)=0.0031 P(feas)=0.0296 E=9.56 (4s, nfev=248)
-  lam=3 p=2 expectation P(opt)=0.0056 P(feas)=0.0545 E=3.05 (18s, nfev=837)
-  lam=3 p=2 cvar        P(opt)=0.0076 P(feas)=0.0641 E=4.51 (17s, nfev=697)
-  lam=3 p=3 expectation P(opt)=0.0083 P(feas)=0.0767 E=4.87 (31s, nfev=1001)
-  lam=3 p=3 cvar        P(opt)=0.0169 P(feas)=0.0910 E=3.38 (33s, nfev=1001)
-  lam=3 p=4 expectation P(opt)=0.0094 P(feas)=0.0674 E=1.90 (42s, nfev=1001)
-  lam=3 p=4 cvar        P(opt)=0.0147 P(feas)=0.0764 E=1.29 (45s, nfev=1001)
-  lam=0 p=4 expectation P(opt)=0.0043 P(feas)=0.0498 E=-3.27 (37s, nfev=1001)
-  lam=0 p=4 cvar        P(opt)=0.0077 P(feas)=0.0772 E=-2.26 (39s, nfev=1001)
-saved results/results.json  (276s)
+[instance] n=12 beams, N=4096 plans, C1-feasible=794, C1&C2-feasible=204
+[exact] optimum beams=[60.0, 90.0, 240.0, 270.0] F=0.038031  sanity={'unique_optimum': True, 'feasible_nonempty': True, 'optimum_changes_with_w_O': True, 'all_sweep_optima_unique': True, 'c1_count_is_794': True}
+[classical] brute force 89.0 ms, greedy found_opt=True (43 evals), SA success=98/100, NNLS bound=0.01983
+[grover check] max |sim - theory| = 2.942091015256665e-14
+[circuit] logical depth 6, transpiled depth 8449, CX/iteration 4536
+[GAS] success 100%, mean oracle calls to optimum 125.7, total 346.8 (81.2s)
+[ablation] [(15, 0.26), (20, 0.8), (25, 1.0)]
+[scaling] n=8 N=256 feasible=80 GAS calls->opt 17.83050847457627 success 98%
+[scaling] n=10 N=1024 feasible=136 GAS calls->opt 63.067796610169495 success 98%
+[scaling] n=12 N=4096 feasible=204 GAS calls->opt 125.68 success 100%
+[scaling] n=14 N=16384 feasible=562 GAS calls->opt 230.55 success 100%
+[done] wrote results/results.json in 251.9s
+
+GAS demo, seed 1000: rounds where the threshold y improved (exact optimum [60, 90, 240, 270], F=0.03803)
+ round  Grover its r  oracle calls so far  measured |x> (qubit 11..0)  beams              new y
+     0             0                    0                000010000100  [60, 210]          0.33782  <- random feasible start
+     2             1                    1                001000100010  [30, 150, 270]     0.25432
+    10             2                    6                001010001000  [90, 210, 270]     0.14060
+    19             4                   15                011100000000  [240, 270, 300]    0.09836
+    31             7                   33                001000011000  [90, 120, 270]     0.09035
+    40             3                   42                011000001001  [0, 90, 270, 300]  0.08225
+    50             4                   53                011000011000  [90, 120, 270, 300] 0.07975
+    65             7                   75                101100001000  [90, 240, 270, 330] 0.06277
+    68             1                   77                011000001100  [60, 90, 270, 300] 0.03974
+    91            48                  245                001100001100  [60, 90, 240, 270] 0.03803  <- EXACT OPTIMUM
+ stopped after 116 rounds / 470 oracle calls (25 consecutive rounds without improvement)
+
+Summary over 100 seeded GAS runs: success 100%, oracle calls to optimum mean 125.7 vs random search 2048.5 (all plans) / 102.5 (feasible only)

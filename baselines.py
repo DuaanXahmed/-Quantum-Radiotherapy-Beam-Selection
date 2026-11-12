@@ -1,113 +1,115 @@
-"""Classical / exact baselines for the fragment-ordering problem.
-
-* brute_force      : exact, enumerates all N! orderings
-* greedy           : multi-start nearest-neighbour on the junction weights
-* sa_permutation   : simulated annealing over orderings (swap moves)
-* sa_qubo          : simulated annealing on the SAME QUBO the quantum circuit sees
-* random_sampling  : uniform random bitstrings on the same QUBO
-"""
+"""Classical baselines: exact enumeration, random search, greedy, simulated annealing, NNLS bound."""
 from __future__ import annotations
 
 import math
 import time
-from itertools import permutations
 
 import numpy as np
+from scipy.optimize import nnls
 
-import instance as inst
-from qubo import QUBOModel
+from plans import PRESCRIPTION, PlanProblem, index_to_bits
 
 
-def brute_force(W: np.ndarray) -> dict:
+def brute_force(problem: PlanProblem, feasible_only: bool = False) -> dict:
+    """Exact optimum by evaluating plans one at a time (honest per-plan loop, not vectorised)."""
+    feas = problem.feasible_mask()
+    candidates = np.flatnonzero(feas) if feasible_only else np.arange(problem.N)
     t0 = time.perf_counter()
-    n = W.shape[0]
-    scored = sorted(((inst.gain(p, W), p) for p in permutations(range(n))), reverse=True)
-    best_gain, best = scored[0]
-    return {"order": best, "gain": best_gain, "unique": scored[0][0] > scored[1][0],
-            "all": scored, "seconds": time.perf_counter() - t0}
+    best, best_F = -1, math.inf
+    for i in candidates:
+        x = index_to_bits(int(i), problem.n)
+        if not feasible_only and not problem.feasible(x):
+            continue
+        f = problem.cost(x)
+        if f < best_F:
+            best, best_F = int(i), f
+    dt = time.perf_counter() - t0
+    return dict(index=best, cost=best_F, evaluations=int(candidates.size), seconds=dt)
 
 
-def greedy(W: np.ndarray) -> dict:
-    t0 = time.perf_counter()
-    n = W.shape[0]
-    best, best_gain = None, -math.inf
-    for s in range(n):
-        order, left = [s], set(range(n)) - {s}
-        while left:
-            nxt = max(left, key=lambda j: W[order[-1], j])
-            order.append(nxt)
-            left.remove(nxt)
-        g = inst.gain(order, W)
-        if g > best_gain:
-            best, best_gain = tuple(order), g
-    return {"order": best, "gain": best_gain, "seconds": time.perf_counter() - t0}
+def random_search(problem: PlanProblem, trials: int = 1000, seed: int = 7) -> dict:
+    """Random search without replacement: evaluations until the optimum is drawn."""
+    rng = np.random.default_rng(seed)
+    opt = problem.optimum()["index"]
+    feas_idx = np.flatnonzero(problem.feasible_mask())
+    N, M = problem.N, feas_idx.size
+    all_states = np.array([int(np.flatnonzero(rng.permutation(N) == opt)[0]) + 1 for _ in range(trials)])
+    feas_pos = int(np.flatnonzero(feas_idx == opt)[0])
+    feas_only = np.array([int(np.flatnonzero(rng.permutation(M) == feas_pos)[0]) + 1 for _ in range(trials)])
+    return dict(trials=trials,
+                all_states=dict(mean=float(all_states.mean()), median=float(np.median(all_states)),
+                                analytic=(N + 1) / 2, samples=all_states.tolist()),
+                feasible_only=dict(mean=float(feas_only.mean()), median=float(np.median(feas_only)),
+                                   analytic=(M + 1) / 2, samples=feas_only.tolist()))
 
 
-def sa_permutation(W: np.ndarray, rng: np.random.Generator, steps: int = 2000,
-                   T0: float = 3.0, T1: float = 0.05) -> dict:
-    t0 = time.perf_counter()
-    n = W.shape[0]
-    cur = list(rng.permutation(n))
-    cur_g = inst.gain(cur, W)
-    best, best_g = tuple(cur), cur_g
+def greedy(problem: PlanProblem) -> dict:
+    """Forward selection: repeatedly add the beam that lowers F most while staying feasible."""
+    x = np.zeros(problem.n, dtype=np.int8)
+    f, evals, path = problem.cost(x), 1, []
+    while x.sum() < problem.k:
+        best_a, best_f = None, f
+        for a in np.flatnonzero(x == 0):
+            x[a] = 1
+            evals += 1
+            if problem.feasible(x):
+                fa = problem.cost(x)
+                if fa < best_f:
+                    best_a, best_f = int(a), fa
+            x[a] = 0
+        if best_a is None:
+            break
+        x[best_a], f = 1, best_f
+        path.append(float(problem.phantom.angles_deg[best_a]))
+    idx = int((x.astype(int) << np.arange(problem.n)).sum())
+    return dict(index=idx, cost=float(f), evaluations=evals, beams_added_in_order=path,
+                found_opt=bool(idx == problem.optimum()["index"]))
+
+
+def simulated_annealing(problem: PlanProblem, seed: int, steps: int = 300,
+                        T0: float = 0.02, T1: float = 1e-4, p_swap: float = 0.5) -> dict:
+    """Constraint-aware SA. Moves: flip one beam on/off, or (prob. p_swap) swap a used beam
+    for an unused one, which keeps the beam count (plain flips get trapped at the k-beam limit).
+    Infeasible proposals are rejected outright."""
+    rng = np.random.default_rng(seed)
+    F, feas = problem.costs(), problem.feasible_mask()
+    opt = problem.optimum()["index"]
+    cur = int(rng.choice(np.flatnonzero(feas)))
+    best, evals, evals_to_opt = cur, 1, (1 if cur == opt else None)
     for s in range(steps):
-        T = T0 * (T1 / T0) ** (s / max(steps - 1, 1))
-        a, b = rng.choice(n, size=2, replace=False)
-        cand = cur.copy()
-        cand[a], cand[b] = cand[b], cand[a]
-        g = inst.gain(cand, W)
-        if g >= cur_g or rng.random() < math.exp((g - cur_g) / T):
-            cur, cur_g = cand, g
-            if cur_g > best_g:
-                best, best_g = tuple(cur), cur_g
-    return {"order": best, "gain": best_g, "seconds": time.perf_counter() - t0}
+        T = T0 * (T1 / T0) ** (s / max(1, steps - 1))
+        on = [a for a in range(problem.n) if cur >> a & 1]
+        off = [a for a in range(problem.n) if not cur >> a & 1]
+        if on and off and rng.random() < p_swap:
+            nxt = cur ^ (1 << int(rng.choice(on))) ^ (1 << int(rng.choice(off)))
+        else:
+            nxt = cur ^ (1 << int(rng.integers(problem.n)))
+        evals += 1
+        if not feas[nxt]:
+            continue
+        dF = F[nxt] - F[cur]
+        if dF < 0 or rng.random() < math.exp(-dF / T):
+            cur = nxt
+            if F[cur] < F[best]:
+                best = cur
+                if best == opt and evals_to_opt is None:
+                    evals_to_opt = evals
+    return dict(seed=seed, index=int(best), cost=float(F[best]), found_opt=bool(best == opt),
+                evaluations=evals, evaluations_to_opt=evals_to_opt)
 
 
-def sa_qubo(model: QUBOModel, rng: np.random.Generator, steps: int = 20000,
-            T0: float | None = None, T1: float = 0.05) -> dict:
-    """Single-bit-flip simulated annealing on E(x) = x^T Q x + offset.
-    Returns the best FEASIBLE state seen (or None)."""
-    t0 = time.perf_counter()
-    nv, n = model.num_vars, model.n
-    T0 = T0 if T0 is not None else model.A
-    diag = np.diag(model.Q).copy()
-    S = model.Q + model.Q.T
-    np.fill_diagonal(S, 0.0)
-    x = rng.integers(0, 2, size=nv).astype(float)
-    E = model.energy(x)
-    best_E, best_x = math.inf, None
-
-    def is_feasible(v):
-        M = v.reshape(n, n)
-        return bool((M.sum(axis=1) == 1).all() and (M.sum(axis=0) == 1).all())
-
-    for s in range(steps):
-        T = T0 * (T1 / T0) ** (s / max(steps - 1, 1))
-        k = int(rng.integers(nv))
-        d = 1.0 - 2.0 * x[k]
-        delta = d * (diag[k] + S[k] @ x)
-        if delta <= 0 or rng.random() < math.exp(-delta / T):
-            x[k] += d
-            E += delta
-            if E < best_E - 1e-12 and is_feasible(x):
-                best_E, best_x = E, x.copy()
-    order = None
-    if best_x is not None:
-        M = best_x.reshape(n, n)
-        order = tuple(int(M[:, t].argmax()) for t in range(n))
-    return {"order": order, "energy": best_E, "seconds": time.perf_counter() - t0}
-
-
-def random_sampling(model: QUBOModel, rng: np.random.Generator, shots: int = 4096) -> dict:
-    t0 = time.perf_counter()
-    ks = rng.integers(0, 2 ** model.num_vars, size=shots)
-    feas = model.feasible[ks]
-    best_E = math.inf
-    best_k = None
-    if feas.any():
-        cand = ks[feas]
-        j = int(np.argmin(model.energies[cand]))
-        best_k, best_E = int(cand[j]), float(model.energies[cand[j]])
-    return {"order": model.decode(best_k) if best_k is not None else None,
-            "energy": best_E, "feasible_fraction": float(feas.mean()),
-            "seconds": time.perf_counter() - t0}
+def nnls_bound(problem: PlanProblem) -> dict:
+    """Continuous relaxation: beam weights w >= 0 (any intensity), no beam limit, no C2.
+    min_w F(w) is a weighted least-squares problem; every binary plan is a feasible w,
+    so this value is a valid lower bound on F for every plan."""
+    ph = problem.phantom
+    blocks, rhs = [], []
+    for mask, w, target in [(ph.tumour, problem.w_T, PRESCRIPTION), (ph.oar, problem.w_O, 0.0),
+                            (ph.normal, problem.w_N, 0.0)]:
+        s = math.sqrt(w / mask.sum())
+        blocks.append(s * ph.D[:, mask].T)
+        rhs.append(np.full(mask.sum(), s * target))
+    A, b = np.vstack(blocks), np.concatenate(rhs)
+    w, res = nnls(A, b)
+    return dict(bound=float(res**2), weights=[float(v) for v in w],
+                beams_used=[float(a) for a, v in zip(ph.angles_deg, w) if v > 1e-6])
