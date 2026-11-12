@@ -23,6 +23,8 @@ and three classical heuristics.
 
 | File | Purpose |
 |---|---|
+| `PROBLEM_STATEMENT.md` | Problem statement: objective, constraints, users, instance, results, limitations |
+| `demo.py` | Step-by-step live demo used in the video (reads -> QUBO -> QAOA shots -> recovered genome) |
 | `instance.py` | Toy instance (4 fragments, ground-truth genome), overlap matrix, weak-junction scoring |
 | `qubo.py` | One-hot QUBO builder, QUBO to Ising conversion, penalty-weight selection, exact energies |
 | `qaoa.py` | Qiskit QAOA circuit (RZ/RZZ cost layer, RX mixer), COBYLA training (expected energy or CVaR), evaluation |
@@ -34,7 +36,7 @@ and three classical heuristics.
 
 ## Setup
 
-Python 3.10 or newer.
+Python 3.10 or newer (tested on Python 3.12 with Qiskit 2.x and Qiskit Aer).
 
 ```bash
 python -m venv .venv
@@ -46,6 +48,7 @@ pip install -r requirements.txt
 
 ```bash
 pytest -q tests                    # 7 tests, about 1 s
+python demo.py                     # 10-second end-to-end demo (add --pause to step through it)
 python run_experiments.py --quick  # smoke test, about 30 s
 python run_experiments.py          # full run used in the report, about 5 min on a laptop CPU
 python plots.py                    # rebuild the figures in results/
