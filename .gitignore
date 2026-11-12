@@ -8,3 +8,5 @@ __pycache__/
 VIDEO_SCRIPT.md
 PITCH.md
 results/results_quick.json
+video/
+make_video.py
