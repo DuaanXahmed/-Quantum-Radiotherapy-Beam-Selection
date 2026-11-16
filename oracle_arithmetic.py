@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import math
 import numpy as np
-from qiskit import QuantumCircuit
-from qiskit.circuit.library import QFTGate, StatePreparation
+from qiskit import QuantumCircuit, transpile
+from qiskit.circuit.library import StatePreparation
 from qiskit_aer import AerSimulator
 
 from plans import PRESCRIPTION, PlanProblem, index_to_bits
@@ -65,7 +65,10 @@ def subspace_state_prep(n: int, k: int, blocked_beams: list[int] | None = None) 
     amps = np.where(valid, 1.0 / math.sqrt(count), 0.0)
     qc = QuantumCircuit(n, name=f"Dicke_le_{k}")
     qc.append(StatePreparation(amps), range(n))
-    return qc, count
+
+    # Yahan transpile use karein taake gates optimize ho jayein:
+    qc_opt = transpile(qc, basis_gates=["u", "cx"], optimization_level=1)
+    return qc_opt, count
 
 
 def subspace_diffuser(prep_qc: QuantumCircuit) -> QuantumCircuit:
@@ -77,6 +80,16 @@ def subspace_diffuser(prep_qc: QuantumCircuit) -> QuantumCircuit:
     qc.mcp(math.pi, list(range(n - 1)), n - 1)
     qc.x(range(n))
     qc.compose(prep_qc, range(n), inplace=True)
+    return qc
+
+
+def _qft_no_swap(m: int) -> QuantumCircuit:
+    """Native QFT circuit matching little-endian phase order (q[0]=LSB, q[m-1]=MSB)."""
+    qc = QuantumCircuit(m, name="QFT")
+    for j in range(m - 1, -1, -1):
+        qc.h(j)
+        for k in range(j):
+            qc.cp(math.pi / (2 ** (j - k)), k, j)
     return qc
 
 
@@ -116,12 +129,13 @@ def build_qft_arithmetic_oracle(problem: PlanProblem, y: float, m_ancilla: int =
     qc.h(anc)
     # 2. Add scaled (F(x) - y) via controlled rotations
     add_fourier_phases(+1)
+    qft_circ = _qft_no_swap(m_ancilla)
     # 3. Inverse QFT maps phases to two's complement binary integer
-    qc.append(QFTGate(m_ancilla).inverse(), anc)
+    qc.compose(qft_circ.inverse(), anc, inplace=True)
     # 4. Sign bit (MSB = anc[-1]) is |1> iff F(x) < y -> Phase Kickback!
     qc.z(anc[-1])
     # 5. Uncompute ancillas back to |0>
-    qc.append(QFTGate(m_ancilla), anc)
+    qc.compose(qft_circ, anc, inplace=True)
     add_fourier_phases(-1)
     qc.h(anc)
 
