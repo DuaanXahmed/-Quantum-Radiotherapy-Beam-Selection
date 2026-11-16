@@ -56,13 +56,32 @@ def diffuser(n: int) -> QuantumCircuit:
     return qc
 
 
+# def grover_circuit(n: int, marked: np.ndarray, r: int, measure: bool = True,
+#                    oracle: DiagonalGate | None = None) -> QuantumCircuit:
+#     """H^n followed by r Grover iterations (oracle + diffuser), optionally measured."""
+#     oracle = oracle if oracle is not None else phase_oracle(marked)
+#     diff = diffuser(n)
+#     qc = QuantumCircuit(n, name=f"Grover_r{r}")
+#     qc.h(range(n))
+#     for _ in range(r):
+#         qc.append(oracle, range(n))
+#         qc.compose(diff, range(n), inplace=True)
+#     if measure:
+#         qc.measure_all()
+#     return qc
+
 def grover_circuit(n: int, marked: np.ndarray, r: int, measure: bool = True,
-                   oracle: DiagonalGate | None = None) -> QuantumCircuit:
-    """H^n followed by r Grover iterations (oracle + diffuser), optionally measured."""
+                   oracle: DiagonalGate | None = None,
+                   prep_qc: QuantumCircuit | None = None,
+                   diff_qc: QuantumCircuit | None = None) -> QuantumCircuit:
+    """State prep (H^n or Dicke subspace) followed by r Grover iterations."""
     oracle = oracle if oracle is not None else phase_oracle(marked)
-    diff = diffuser(n)
+    diff = diff_qc if diff_qc is not None else diffuser(n)
     qc = QuantumCircuit(n, name=f"Grover_r{r}")
-    qc.h(range(n))
+    if prep_qc is not None:
+        qc.compose(prep_qc, range(n), inplace=True)
+    else:
+        qc.h(range(n))
     for _ in range(r):
         qc.append(oracle, range(n))
         qc.compose(diff, range(n), inplace=True)
@@ -94,7 +113,7 @@ def simulate_p_marked(n: int, marked: np.ndarray, r_values, sim: AerSimulator | 
 # ---------------------------------------------------------------- GAS
 def grover_adaptive_search(problem: PlanProblem, seed: int, sim: AerSimulator | None = None,
                            budget: int | None = None, patience: int | None = None,
-                           lam: float = LAMBDA) -> dict:
+                           lam: float = LAMBDA, use_subspace: bool = False) -> dict:
     """One seeded GAS run. Every measurement is a 1-shot AerSimulator execution.
 
     Counts: oracle_calls = total Grover iterations (each applies O_y once);
@@ -105,9 +124,16 @@ def grover_adaptive_search(problem: PlanProblem, seed: int, sim: AerSimulator | 
     n, N = problem.n, problem.N
     F, feas = problem.costs(), problem.feasible_mask()
     opt = problem.optimum()["index"]
-    budget = budget if budget is not None else int(30 * math.sqrt(N))
-    m_max = math.sqrt(N)
-    patience = default_patience(N, lam) if patience is None else patience
+
+    prep_qc, diff_qc, search_space = None, None, N
+    if use_subspace:
+        from oracle_arithmetic import subspace_state_prep, subspace_diffuser
+        prep_qc, search_space = subspace_state_prep(n, problem.k)
+        diff_qc = subspace_diffuser(prep_qc)
+
+    budget = budget if budget is not None else int(30 * math.sqrt(search_space))
+    m_max = math.sqrt(search_space)
+    patience = default_patience(search_space, lam) if patience is None else patience
 
     best = int(rng.choice(np.flatnonzero(feas)))       # random feasible starting plan
     y = float(F[best])
@@ -124,7 +150,7 @@ def grover_adaptive_search(problem: PlanProblem, seed: int, sim: AerSimulator | 
         if oracle_y != y:                              # rebuild O_y only when y changes
             marked = feas & (F < y)
             oracle, oracle_y = phase_oracle(marked), y
-        qc = grover_circuit(n, marked, r, oracle=oracle)
+        qc = grover_circuit(n, marked, r, oracle=oracle, prep_qc=prep_qc, diff_qc=diff_qc)
         counts = sim.run(qc, shots=1, seed_simulator=int(rng.integers(2**31 - 1))).result().get_counts()
         x = int(next(iter(counts)).replace(" ", ""), 2)
         calls += r

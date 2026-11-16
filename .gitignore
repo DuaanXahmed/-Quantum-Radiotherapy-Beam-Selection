@@ -10,3 +10,7 @@ PITCH.md
 results/results_quick.json
 video/
 make_video.py
+
+node_modules/
+.venv/
+*.mp4

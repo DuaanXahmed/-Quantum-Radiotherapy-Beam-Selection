@@ -67,7 +67,35 @@ def beam_dose(theta_deg: float, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     return np.where(in_strip, np.exp(-MU * depth), 0.0)
 
 
-def build_phantom(n_beams: int = 12, oar_centre: tuple[float, float] = OAR_CENTRE) -> Phantom:
+# def build_phantom(n_beams: int = 12, oar_centre: tuple[float, float] = OAR_CENTRE) -> Phantom:
+#     c = (GRID - 1) / 2
+#     rr, cc = np.mgrid[0:GRID, 0:GRID]
+#     xg, yg = cc - c, c - rr
+#     body = xg**2 + yg**2 <= BODY_RADIUS**2 + 1e-9
+#     rows, cols = rr[body], cc[body]
+#     x, y = xg[body].astype(float), yg[body].astype(float)
+
+#     tumour = x**2 + y**2 <= TUMOUR_RADIUS**2 + 1e-9
+#     oar = (x - oar_centre[0])**2 + (y - oar_centre[1])**2 <= OAR_RADIUS**2 + 1e-9
+#     normal = ~(tumour | oar)
+
+#     angles = np.arange(n_beams) * 360.0 / n_beams
+#     scale = DOSE_PER_BEAM / np.exp(-MU * BODY_RADIUS)   # isocentre depth = body radius
+#     D = np.stack([scale * beam_dose(a, x, y) for a in angles])
+
+#     meta = dict(grid=GRID, body_radius=BODY_RADIUS, tumour_radius=TUMOUR_RADIUS,
+#                 oar_radius=OAR_RADIUS, oar_centre=list(oar_centre), beam_width=BEAM_WIDTH,
+#                 mu=MU, dose_per_beam=DOSE_PER_BEAM, n_voxels=int(x.size),
+#                 n_tumour=int(tumour.sum()), n_oar=int(oar.sum()), n_normal=int(normal.sum()))
+#     return Phantom(n_beams, angles, x, y, rows, cols, tumour, oar, normal, D, meta)
+
+def build_phantom(
+    n_beams: int = 12,
+    oar_centre: tuple[float, float] = OAR_CENTRE,
+    tumour_radius: float = TUMOUR_RADIUS,
+    oar_radius: float = OAR_RADIUS,
+    custom_angles_deg: list[float] | None = None,
+) -> Phantom:
     c = (GRID - 1) / 2
     rr, cc = np.mgrid[0:GRID, 0:GRID]
     xg, yg = cc - c, c - rr
@@ -75,16 +103,21 @@ def build_phantom(n_beams: int = 12, oar_centre: tuple[float, float] = OAR_CENTR
     rows, cols = rr[body], cc[body]
     x, y = xg[body].astype(float), yg[body].astype(float)
 
-    tumour = x**2 + y**2 <= TUMOUR_RADIUS**2 + 1e-9
-    oar = (x - oar_centre[0])**2 + (y - oar_centre[1])**2 <= OAR_RADIUS**2 + 1e-9
+    tumour = x**2 + y**2 <= tumour_radius**2 + 1e-9
+    oar = (x - oar_centre[0])**2 + (y - oar_centre[1])**2 <= oar_radius**2 + 1e-9
     normal = ~(tumour | oar)
 
-    angles = np.arange(n_beams) * 360.0 / n_beams
-    scale = DOSE_PER_BEAM / np.exp(-MU * BODY_RADIUS)   # isocentre depth = body radius
+    if custom_angles_deg is not None:
+        angles = np.asarray(custom_angles_deg, dtype=float)
+        n_beams = angles.size
+    else:
+        angles = np.arange(n_beams) * 360.0 / n_beams
+
+    scale = DOSE_PER_BEAM / np.exp(-MU * BODY_RADIUS)
     D = np.stack([scale * beam_dose(a, x, y) for a in angles])
 
-    meta = dict(grid=GRID, body_radius=BODY_RADIUS, tumour_radius=TUMOUR_RADIUS,
-                oar_radius=OAR_RADIUS, oar_centre=list(oar_centre), beam_width=BEAM_WIDTH,
+    meta = dict(grid=GRID, body_radius=BODY_RADIUS, tumour_radius=tumour_radius,
+                oar_radius=oar_radius, oar_centre=list(oar_centre), beam_width=BEAM_WIDTH,
                 mu=MU, dose_per_beam=DOSE_PER_BEAM, n_voxels=int(x.size),
                 n_tumour=int(tumour.sum()), n_oar=int(oar.sum()), n_normal=int(normal.sum()))
     return Phantom(n_beams, angles, x, y, rows, cols, tumour, oar, normal, D, meta)
