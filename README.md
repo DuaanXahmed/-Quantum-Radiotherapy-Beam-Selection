@@ -1,3 +1,5 @@
+🚀 **Live Interactive Simulator:** [quantum-radiotherapy-gas.streamlit.app](https://quantum-radiotherapy-gas.streamlit.app)
+
 # Quantum Grover Adaptive Search for Radiotherapy Beam-Angle Selection under a Beam Limit
 
 **Qiskit Fall Fest 2026, The Quantum Optimization Challenge · Domain: Healthcare**
