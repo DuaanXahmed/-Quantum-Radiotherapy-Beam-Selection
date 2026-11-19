@@ -56,7 +56,6 @@ python run_experiments.py --quick      # < 60 s smoke run + printed GAS walk-thr
 python run_experiments.py              # full run, ~4-5 min -> results/results.json
 python plots.py                        # 6 figures -> results/fig*.png
 python animate_gas.py                  # generate convergence animation -> results/gas_simulation.gif
-python make_report.py                  # report/Radiotherapy_GAS_Report.docx (numbers read from results.json)
 ```
 
 Tested with Python 3.12 / 3.14, Qiskit 2.6, Qiskit Aer 0.18, NumPy 2.5, and Streamlit on Arch Linux & macOS.
@@ -74,7 +73,7 @@ Tested with Python 3.12 / 3.14, Qiskit 2.6, Qiskit Aer 0.18, NumPy 2.5, and Stre
 | `run_experiments.py` | Runs all benchmarks and writes `results/results.json` (`--quick` for a < 60 s run) |
 | `plots.py` | Generates the 6 publication figures from `results.json` |
 | `animate_gas.py` | Renders the 24 FPS interpolated GAS threshold-convergence & beam-selection animation (`results/gas_simulation.gif`) |
-| `make_report.py` | Builds the `.docx` report from `results.json` and the figures |
+| `report/` | Pre-generated formal submission report (`Radiotherapy_GAS_Report.docx`) |
 | `tests/test_core.py` | Feasible count, F vs manual calculation, bit order, oracle marks, Grover iteration vs theory, diffuser, seeded GAS = brute force |
 
 ## Method in one paragraph
