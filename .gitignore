@@ -1,16 +1,14 @@
+# Python
 __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
-.DS_Store
-~$*.docx
-# local-only material (not part of the submission repo)
-VIDEO_SCRIPT.md
-PITCH.md
-results/results_quick.json
-video/
-make_video.py
 
+# OS
+.DS_Store
+
+# Editor / Office lock files
+~$*.docx
+
+# Node (not used)
 node_modules/
-.venv/
-*.mp4
