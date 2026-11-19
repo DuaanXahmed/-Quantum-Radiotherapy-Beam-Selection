@@ -71,12 +71,16 @@ if st.sidebar.button("🚀 Run Quantum GAS vs Classical Race", type="primary"):
         res_rs = bl.random_search(prob, trials=200, seed=7)
 
     # Top Metrics
+    gas_calls_display = res_gas["oracle_calls_to_opt"] if res_gas["found_opt"] else res_gas["oracle_calls"]
+    gas_calls_label = "calls to optimum" if res_gas["found_opt"] else "calls (total)"
+    gas_speedup = res_rs['all_states']['analytic'] / max(1, gas_calls_display)
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Quantum Selected Angles", str([int(a) for a in prob.beams(res_gas["best"])]))
-    c2.metric("GAS Oracle Calls", f"{res_gas['oracle_calls_to_opt']} calls",
+    c2.metric("GAS Oracle Calls", f"{gas_calls_display} {gas_calls_label}",
               f"Subspace: {int(prob.feasible_mask(use_c2=False).sum())} states" if use_subspace else f"Full: {prob.N} states")
     c3.metric("Classical Random Queries", f"{res_rs['all_states']['analytic']:.0f} calls",
-              f"{res_rs['all_states']['analytic'] / max(1, res_gas['oracle_calls_to_opt']):.1f}x slower than GAS")
+              f"{gas_speedup:.1f}x slower than GAS")
     c4.metric("Objective Cost F(x)", f"{res_gas['best_cost']:.5f}",
               "✅ Exact Global Optimum" if res_gas["found_opt"] else "⚠️ Local Minimum")
 
@@ -123,8 +127,9 @@ if st.sidebar.button("🚀 Run Quantum GAS vs Classical Race", type="primary"):
     st.subheader("🏁 Head-to-Head: Quantum GAS vs. Classical Solvers")
     st.table([
         {"Method": "Quantum GAS (Ours)", "Beams Chosen": str([int(a) for a in prob.beams(res_gas["best"])]),
-         "Cost F(x)": f"{res_gas['best_cost']:.5f}", "Queries to Opt": res_gas["oracle_calls_to_opt"],
-         "Found Exact Optimum?": "✅ Yes" if res_gas["found_opt"] else "❌ No"},
+         "Cost F(x)": f"{res_gas['best_cost']:.5f}",
+         "Queries to Opt": res_gas["oracle_calls_to_opt"] if res_gas["found_opt"] else f"{res_gas['oracle_calls']} (total)",
+         "Found Exact Optimum?": "✅ Yes" if res_gas["found_opt"] else "❌ No (Local Minimum)"},
         {"Method": "Greedy Forward Selection", "Beams Chosen": str([int(a) for a in prob.beams(res_greedy["index"])]),
          "Cost F(x)": f"{res_greedy['cost']:.5f}", "Queries to Opt": res_greedy["evaluations"],
          "Found Exact Optimum?": "✅ Yes" if res_greedy["found_opt"] else "❌ FAILED (Local Trap)"},
